@@ -18,6 +18,10 @@ from datetime import datetime
 from pathlib import Path
 from cloakbrowser import launch_persistent_context_async
 
+# Fix Windows console encoding
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 try:
     from dotenv import load_dotenv
 except ImportError:
@@ -178,7 +182,7 @@ async def collect_videos(page):
     videos.sort(key=lambda v: v.get("_date_prefix", ""))
     with open(METADATA_FILE, "w", encoding="utf-8") as f:
         json.dump(videos, f, indent=2, ensure_ascii=False)
-    print(f"[*] Saved metadata for {len(videos)} videos → {METADATA_FILE}")
+    print(f"[*] Saved metadata for {len(videos)} videos -> {METADATA_FILE}")
 
     print("[*] Video date range:", videos[0].get("_date_prefix"), "->", videos[-1].get("_date_prefix"))
     return videos
@@ -365,6 +369,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Download Tyler Raw videos for offline personal use.")
     parser.add_argument("--headless", action="store_true", help="Run browser without a visible window.")
     parser.add_argument("--limit", type=int, default=0, help="Download at most N videos.")
+    parser.add_argument("--latest", action="store_true", help="When used with --limit, take the N most recent videos instead of oldest.")
     parser.add_argument("--metadata-only", action="store_true", help="Only refresh metadata and video_links.txt.")
     parser.add_argument("--no-nfo", action="store_true", help="Skip writing .nfo and .jpg files for Jellyfin.")
     args = parser.parse_args()
@@ -389,7 +394,10 @@ async def main():
     # Collect all video metadata
     videos = await collect_videos(page)
     if args.limit > 0:
-        videos = videos[:args.limit]
+        if args.latest:
+            videos = videos[-args.limit:]  # Take the N most recent (end of sorted list)
+        else:
+            videos = videos[:args.limit]
 
     if not videos:
         print("[!] No videos found.")
@@ -427,7 +435,7 @@ async def main():
         watch_url = f"{BASE_URL}/watch/{uid}"
         out_path = OUTPUT_DIR / f"{filename}.mp4"
 
-        print(f"\n[{i}/{len(videos)}] {date_prefix} — {title[:60]}")
+        print(f"\n[{i}/{len(videos)}] {date_prefix} - {title[:60]}")
 
         if out_path.exists() and out_path.stat().st_size > 1_000_000:
             print("  [skip] Already exists")
@@ -456,10 +464,10 @@ async def main():
             if not args.no_nfo:
                 write_nfo(video, out_path)
                 download_thumb(video, out_path)
-            print("  ✓ Downloaded")
+            print("  [OK] Downloaded")
         else:
             failed.append(watch_url)
-            print("  ✗ Failed")
+            print("  [FAIL] Failed")
 
     await context.close()
 
